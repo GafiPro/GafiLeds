@@ -29,6 +29,7 @@ public final class WindowsRobotCaptureBackend implements ScreenCaptureBackend {
 
     public WindowsRobotCaptureBackend(MinecraftClient client, ReactiveConfig config) throws AWTException {
         if (GraphicsEnvironment.isHeadless()) throw new AWTException("Java is running in headless mode");
+        this.client = client;
         device = selectDevice(client, config);
         GraphicsConfiguration gc = device.getDefaultConfiguration();
         bounds = gc.getBounds();
