@@ -12,7 +12,6 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.image.BufferedImage;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Windows capture backend. Normal/windowed Minecraft uses the real Windows
@@ -30,7 +29,6 @@ public final class WindowsRobotCaptureBackend implements ScreenCaptureBackend {
 
     public WindowsRobotCaptureBackend(MinecraftClient client, ReactiveConfig config) throws AWTException {
         if (GraphicsEnvironment.isHeadless()) throw new AWTException("Java is running in headless mode");
-        this.client = client;
         device = selectDevice(client, config);
         GraphicsConfiguration gc = device.getDefaultConfiguration();
         bounds = gc.getBounds();
@@ -66,47 +64,44 @@ public final class WindowsRobotCaptureBackend implements ScreenCaptureBackend {
     }
 
     private BufferedImage captureMinecraftFramebuffer() {
-        AtomicReference<BufferedImage> result = new AtomicReference<>();
-        AtomicReference<Throwable> failure = new AtomicReference<>();
-
-        Runnable captureOnClientThread = () -> {
-            try {
-                ScreenshotRecorder.takeScreenshot(
-                    client.getFramebuffer(),
-                    FULLSCREEN_DOWNSCALE,
-                    image -> {
-                        try {
-                            result.set(toBufferedImage(image));
-                        } catch (Throwable t) {
-                            failure.set(t);
-                        } finally {
-                            image.close();
-                        }
-                    }
-                );
-            } catch (Throwable t) {
-                failure.set(t);
-            }
-        };
-
         try {
+            final java.util.concurrent.atomic.AtomicReference<BufferedImage> result = new java.util.concurrent.atomic.AtomicReference<>();
+            Runnable captureOnClientThread = () -> {
+                NativeImage image = null;
+                try {
+                    // Use Minecraft's synchronous screenshot path so each capture
+                    // reads the framebuffer that exists on the current render frame.
+                    // The returned image is immediately converted and closed here.
+                    image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer());
+                    result.set(toBufferedImage(image, FULLSCREEN_DOWNSCALE));
+                } finally {
+                    if (image != null) image.close();
+                }
+            };
+
             if (client.isOnThread()) captureOnClientThread.run();
             else client.executeSync(captureOnClientThread);
+            return result.get();
         } catch (Throwable t) {
-            failure.set(t);
+            throw new IllegalStateException("Minecraft framebuffer capture failed", t);
         }
-
-        Throwable error = failure.get();
-        if (error != null) throw new IllegalStateException("Minecraft framebuffer capture failed", error);
-        return result.get();
     }
 
-    private static BufferedImage toBufferedImage(NativeImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
+    private static BufferedImage toBufferedImage(NativeImage image, int downscale) {
+        int sourceWidth = image.getWidth();
+        int sourceHeight = image.getHeight();
+        int width = Math.max(1, sourceWidth / Math.max(1, downscale));
+        int height = Math.max(1, sourceHeight / Math.max(1, downscale));
         int[] pixels = image.copyPixelsArgb();
         BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        output.setRGB(0, 0, width, height, pixels, 0, width);
+
+        for (int y = 0; y < height; y++) {
+            int sy = Math.min(sourceHeight - 1, y * downscale);
+            for (int x = 0; x < width; x++) {
+                int sx = Math.min(sourceWidth - 1, x * downscale);
+                output.setRGB(x, y, pixels[sy * sourceWidth + sx]);
+            }
+        }
         return output;
     }
 
