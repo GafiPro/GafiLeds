@@ -9,6 +9,7 @@ import com.gafipro.gafileds.govee.GoveeDiscovery;
 import com.gafipro.gafileds.reactive.ReactiveController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,7 @@ public final class GafiLeds implements ClientModInitializer {
         commandScheduler = new GoveeCommandScheduler(goveeClient, config);
         reactiveController = new ReactiveController(configManager, config, commandScheduler);
         GoveeCommands.register(this);
+        HudRenderCallback.EVENT.register((drawContext, tickCounter) -> reactiveController.onRenderFrame());
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> shutdown());
         LOGGER.info("GafiLeds {} initialized", configManager.version());
     }
