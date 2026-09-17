@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "gafileds",
+  "version": "${version}",
+  "name": "GafiLeds",
+  "description": "Local Govee LAN control and low-latency screen-reactive lighting for Minecraft.",
+  "authors": ["GafiPro"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {"client": ["com.gafipro.gafileds.GafiLeds"]},
+  "depends": {"fabricloader": ">=0.18.1", "minecraft": "1.21.11", "fabric-api": ">=0.141.3"}
+}

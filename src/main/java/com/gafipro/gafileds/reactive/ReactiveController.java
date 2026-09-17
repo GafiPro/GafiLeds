@@ -1,0 +1,29 @@
+package com.gafipro.gafileds.reactive;
+
+import com.gafipro.gafileds.GafiLeds;
+import com.gafipro.gafileds.config.ConfigManager;
+import com.gafipro.gafileds.config.GafiLedsConfig;
+import com.gafipro.gafileds.govee.GoveeCommandScheduler;
+import com.gafipro.gafileds.platform.ScreenCaptureBackend;
+import com.gafipro.gafileds.platform.WindowsRobotCaptureBackend;
+import net.minecraft.client.MinecraftClient;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+public final class ReactiveController implements AutoCloseable {
+    public enum State{IDLE,STARTING,RUNNING,ERROR,STOPPING}
+    private final ConfigManager configManager;private final GoveeCommandScheduler govee;private final ScheduledExecutorService captureExecutor=executor("GafiLeds-ScreenCapture"),analysisExecutor=executor("GafiLeds-ColorAnalysis");private final ReactiveMetrics metrics=new ReactiveMetrics();private final ColorAnalyzer analyzer=new ColorAnalyzer();private final ColorSmoother smoother=new ColorSmoother();private final AtomicReference<State> state=new AtomicReference<>(State.IDLE);private volatile GafiLedsConfig config;private volatile ScreenCaptureService captureService;private volatile ScheduledFuture<?> captureTask,analysisTask;private volatile long previousStepNanos;private volatile java.net.InetAddress deviceAddress;private volatile String lastError="";
+    public ReactiveController(ConfigManager cm,GafiLedsConfig c,GoveeCommandScheduler g){configManager=cm;config=c;govee=g;}
+    private static ScheduledExecutorService executor(String name){return Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,name);t.setDaemon(true);return t;});}
+    public synchronized boolean start(){State current=state.get();if(current==State.RUNNING||current==State.STARTING)return true;state.set(State.STARTING);lastError="";try{if(config.selectedDeviceIp().isBlank())throw new IllegalStateException("No Govee device IP is configured");deviceAddress=java.net.InetAddress.getByName(config.selectedDeviceIp());MinecraftClient client=MinecraftClient.getInstance();ScreenCaptureBackend backend=new WindowsRobotCaptureBackend(client,config.reactive());ScreenCaptureService service=new ScreenCaptureService(backend,config.reactive());captureService=service;smoother.reset(new RgbColor(0,0,0));previousStepNanos=System.nanoTime();long cp=Math.max(1,1000L/config.reactive().captureFps()),ap=Math.max(1,1000L/config.reactive().analysisFps());captureTask=captureExecutor.scheduleAtFixedRate(this::captureSafe,0,cp,TimeUnit.MILLISECONDS);analysisTask=analysisExecutor.scheduleAtFixedRate(this::analyzeSafe,0,ap,TimeUnit.MILLISECONDS);state.set(State.RUNNING);govee.sendBrightness(deviceAddress,config.brightness());govee.sendOn(deviceAddress,true);GafiLeds.LOGGER.info("Govee reactive mode started");return true;}catch(Throwable t){lastError=message(t);metrics.error();state.set(State.ERROR);GafiLeds.LOGGER.warn("Could not start Govee reactive mode: {}",lastError);stopInternal(false);return false;}}
+    private void captureSafe(){try{ScreenCaptureService s=captureService;if(state.get()!=State.RUNNING||s==null)return;if(s.captureOnce())metrics.captured();else metrics.droppedFrame();}catch(Throwable t){metrics.error();lastError=message(t);GafiLeds.LOGGER.debug("Reactive capture error: {}",lastError);}}
+    private void analyzeSafe(){try{if(state.get()!=State.RUNNING)return;ScreenCaptureService s=captureService;if(s==null)return;FrameBuffer f=s.store().acquireNewestForRead();if(f==null)return;try{ReactiveConfig r=config.reactive();RgbColor observed=analyzer.analyze(f.pixels(),r);metrics.observed(observed);metrics.analyzed();RgbColor target=smoother.updateTarget(observed,r.threshold());metrics.target(target);long now=System.nanoTime();double dt=Math.max(0,Math.min(.25,(now-previousStepNanos)/1e9));previousStepNanos=now;RgbColor current=smoother.step(dt,r.smoothing());if(current==null)current=observed;metrics.current(current);if(deviceAddress!=null){govee.submitColor(deviceAddress,current);metrics.sent();}}finally{s.store().releaseAfterRead(f);}}catch(Throwable t){metrics.error();lastError=message(t);GafiLeds.LOGGER.debug("Reactive analysis error: {}",lastError);}}
+    public synchronized void stop(){stopInternal(true);}private void stopInternal(boolean log){State c=state.getAndSet(State.STOPPING);if(c==State.IDLE){state.set(State.IDLE);return;}if(captureTask!=null)captureTask.cancel(false);if(analysisTask!=null)analysisTask.cancel(false);captureTask=null;analysisTask=null;ScreenCaptureService s=captureService;captureService=null;deviceAddress=null;if(s!=null)s.close();state.set(State.IDLE);if(log)GafiLeds.LOGGER.info("Govee reactive mode stopped");}
+    public synchronized void applyConfig(GafiLedsConfig c){boolean restart=state.get()==State.RUNNING;if(restart)stop();config=c;if(restart)start();}
+    public State state(){return state.get();}public boolean isRunning(){return state.get()==State.RUNNING;}public ReactiveMetrics metrics(){return metrics;}public String lastError(){return lastError;}public ReactiveConfig config(){return config.reactive();}public RgbColor currentColor(){return metrics.current();}public RgbColor targetColor(){return metrics.target();}public RgbColor observedColor(){return metrics.observed();}
+    private static String message(Throwable t){return t.getMessage()==null?t.getClass().getSimpleName():t.getMessage();}
+    public void close(){stop();captureExecutor.shutdownNow();analysisExecutor.shutdownNow();}
+}
