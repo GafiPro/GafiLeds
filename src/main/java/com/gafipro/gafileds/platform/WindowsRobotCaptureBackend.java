@@ -12,12 +12,12 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.image.BufferedImage;
+import java.util.function.Consumer;
 
 /**
  * Windows capture backend. Normal/windowed Minecraft uses the real Windows
- * desktop via AWT Robot. Minecraft fullscreen uses the rendered Minecraft
- * framebuffer directly because exclusive/accelerated fullscreen can be
- * invisible or stale to desktop capture APIs.
+ * desktop via AWT Robot. Fullscreen Minecraft is captured from the current
+ * Minecraft framebuffer by the render-thread callback path in ScreenCaptureService.
  */
 public final class WindowsRobotCaptureBackend implements ScreenCaptureBackend {
     private static final int FULLSCREEN_DOWNSCALE = 4;
@@ -56,52 +56,34 @@ public final class WindowsRobotCaptureBackend implements ScreenCaptureBackend {
 
     @Override
     public BufferedImage capture() {
-        if (client.getWindow().isFullscreen()) {
-            BufferedImage minecraft = captureMinecraftFramebuffer();
-            if (minecraft != null) return minecraft;
-        }
         return robot.createScreenCapture(bounds);
     }
 
-    private BufferedImage captureMinecraftFramebuffer() {
-        try {
-            final java.util.concurrent.atomic.AtomicReference<BufferedImage> result = new java.util.concurrent.atomic.AtomicReference<>();
-            Runnable captureOnClientThread = () -> {
-                NativeImage image = null;
-                try {
-                    // Use Minecraft's synchronous screenshot path so each capture
-                    // reads the framebuffer that exists on the current render frame.
-                    // The returned image is immediately converted and closed here.
-                    image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer());
-                    result.set(toBufferedImage(image, FULLSCREEN_DOWNSCALE));
-                } finally {
-                    if (image != null) image.close();
-                }
-            };
+    @Override
+    public boolean captureFullscreen(Consumer<BufferedImage> consumer) {
+        if (!client.getWindow().isFullscreen() || !client.isOnThread()) return false;
 
-            if (client.isOnThread()) captureOnClientThread.run();
-            else client.executeSync(captureOnClientThread);
-            return result.get();
+        try {
+            ScreenshotRecorder.takeScreenshot(client.getFramebuffer(), FULLSCREEN_DOWNSCALE, image -> {
+                try {
+                    consumer.accept(toBufferedImage(image));
+                } finally {
+                    image.close();
+                }
+            });
+            return true;
         } catch (Throwable t) {
-            throw new IllegalStateException("Minecraft framebuffer capture failed", t);
+            GafiLeds.LOGGER.debug("Minecraft fullscreen framebuffer capture failed: {}", t.getMessage());
+            return false;
         }
     }
 
-    private static BufferedImage toBufferedImage(NativeImage image, int downscale) {
-        int sourceWidth = image.getWidth();
-        int sourceHeight = image.getHeight();
-        int width = Math.max(1, sourceWidth / Math.max(1, downscale));
-        int height = Math.max(1, sourceHeight / Math.max(1, downscale));
+    private static BufferedImage toBufferedImage(NativeImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
         int[] pixels = image.copyPixelsArgb();
         BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-
-        for (int y = 0; y < height; y++) {
-            int sy = Math.min(sourceHeight - 1, y * downscale);
-            for (int x = 0; x < width; x++) {
-                int sx = Math.min(sourceWidth - 1, x * downscale);
-                output.setRGB(x, y, pixels[sy * sourceWidth + sx]);
-            }
-        }
+        output.setRGB(0, 0, width, height, pixels, 0, width);
         return output;
     }
 
