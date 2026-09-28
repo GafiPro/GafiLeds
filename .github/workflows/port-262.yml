@@ -14,9 +14,10 @@ jobs:
         with: {fetch-depth: 0}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '25'}
-      - run: chmod +x gradlew
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.5.1'}
       - name: Migrate mappings
-        run: ./gradlew migrateMappings --mappings "net.minecraft:mappings:1.21.11" --no-daemon
+        run: gradle migrateMappings --mappings "net.minecraft:mappings:1.21.11" --no-daemon
       - name: Update build
         shell: python
         run: |
@@ -33,7 +34,7 @@ jobs:
           for p in Path(".").rglob("fabric.mod.json"):
             s=p.read_text().replace('"minecraft": "~1.21.11"','"minecraft": "~26.2"').replace('"minecraft": "1.21.11"','"minecraft": "26.2"').replace('"java": ">=21"','"java": ">=25"'); p.write_text(s)
       - name: Build
-        run: ./gradlew clean build --no-daemon --max-workers=1
+        run: gradle clean build --no-daemon --max-workers=1
       - name: Commit
         run: |
           git config user.name github-actions[bot]
@@ -41,4 +42,4 @@ jobs:
           git add -A
           git commit -m "[26.2-port] Update to Minecraft 26.2" || exit 0
           git push
-# trigger
+# retrigger
