@@ -77,6 +77,50 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.1'
+      - name: Fix 26.2 API compatibility
+        shell: python
+        run: |
+          from pathlib import Path
+
+          for path in Path("src").rglob("*.java"):
+              s = path.read_text(encoding="utf-8")
+
+              # Fabric API 26.2 renames.
+              s = s.replace("net.fabricmc.fabric.api.client.command.v2.ClientCommandManager",
+                            "net.fabricmc.fabric.api.client.command.v2.ClientCommands")
+              s = s.replace("ClientCommandManager.", "ClientCommands.")
+
+              # Common vanilla Mojang mapping names which migrateMappings can leave
+              # behind when the old Yarn symbol had no direct 1:1 migration.
+              s = s.replace("net.minecraft.text.MutableText", "net.minecraft.network.chat.MutableComponent")
+              s = s.replace("net.minecraft.text.Text", "net.minecraft.network.chat.Component")
+              s = s.replace("Text.literal", "Component.literal")
+              s = s.replace("Text.empty", "Component.empty")
+              s = s.replace("net.minecraft.util.Formatting", "net.minecraft.ChatFormatting")
+              s = s.replace("Formatting.", "ChatFormatting.")
+              s = s.replace(".formatted(", ".withStyle(")
+
+              # 26.2 GUI reorganisation.
+              s = s.replace("client.currentScreen", "client.gui.screen()")
+              s = s.replace("client.screen", "client.gui.screen()")
+              s = s.replace("client.setScreen(", "client.gui.setScreen(")
+              s = s.replace("client.isWindowFocused()", "client.isWindowActive()")
+
+              
+
+              # HUD callback was removed; register a HUD element instead.
+              s = s.replace("import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;",
+                            "import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;")
+              s = s.replace(
+                  "HudRenderCallback.EVENT.register((drawContext, tickCounter) -> reactiveController.onRenderFrame());",
+                  "HudElementRegistry.addLast(net.minecraft.resources.Identifier.fromNamespaceAndPath(MOD_ID, \"reactive\"), (graphics, deltaTracker) -> reactiveController.onRenderFrame());"
+              )
+              
+
+              
+
+              path.write_text(s, encoding="utf-8")
+
       - name: Build 26.2
         run: |
           rm -rf build
