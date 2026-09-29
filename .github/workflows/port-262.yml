@@ -1,8 +1,8 @@
 name: Port to Minecraft 26.2
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -12,34 +12,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
-      - uses: actions/setup-java@v4
-        with: {distribution: temurin, java-version: '25'}
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '9.5.1'}
-      - name: Migrate mappings
-        run: gradle migrateMappings --mappings "net.minecraft:mappings:1.21.11" --no-daemon
-      - name: Update build
-        shell: python
+      - name: Save target build files
         run: |
-          from pathlib import Path
-          import re
-          p=Path("gradle.properties"); s=p.read_text()
-          s=re.sub(r'^minecraft_version=.*$', 'minecraft_version=26.2', s, flags=re.M)
-          s=re.sub(r'^loader_version=.*$', 'loader_version=0.19.3', s, flags=re.M)
-          s=re.sub(r'^loom_version=.*$', 'loom_version=1.18-SNAPSHOT', s, flags=re.M)
-          s=re.sub(r'^(fabric_api_version|fabric_version)=.*$', lambda m:m.group(1)+'=0.158.0+26.2', s, flags=re.M)
-          s=re.sub(r'^yarn_mappings=.*\n?', '', s, flags=re.M); p.write_text(s)
-          p=Path("build.gradle"); s=p.read_text().replace("net.fabricmc.fabric-loom-remap","net.fabricmc.fabric-loom")
-          s=re.sub(r'^\s*mappings\s+.*\n','',s,flags=re.M).replace('options.release = 21','options.release = 25').replace('JavaVersion.VERSION_21','JavaVersion.VERSION_25'); p.write_text(s)
-          for p in Path(".").rglob("fabric.mod.json"):
-            s=p.read_text().replace('"minecraft": "~1.21.11"','"minecraft": "~26.2"').replace('"minecraft": "1.21.11"','"minecraft": "26.2"').replace('"java": ">=21"','"java": ">=25"'); p.write_text(s)
-      - name: Build
-        run: gradle clean build --no-daemon --max-workers=1
-      - name: Commit
+          mkdir -p /tmp/target
+          git show HEAD:gradle.properties > /tmp/target/gradle.properties
+          git show HEAD:build.gradle > /tmp/target/build.gradle
+          find src -name fabric.mod.json -print0 | while IFS= read -r -d '' f; do mkdir -p "/tmp/target/$(dirname "$f")"; git show "HEAD:$f" > "/tmp/target/$f"; done
+      - name: Prepare old Yarn build
+        run: |
+          git checkout HEAD~3 -- gradle.properties build.gradle
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Migrate Yarn to Mojang mappings
+        run: gradle migrateMappings --mappings "net.minecraft:mappings:1.21.11" --no-daemon
+      - name: Restore 26.2 build files
+        run: |
+          cp /tmp/target/gradle.properties gradle.properties
+          cp /tmp/target/build.gradle build.gradle
+          find /tmp/target/src -name fabric.mod.json -print0 | while IFS= read -r -d '' f; do target="${f#/tmp/target/}"; cp "$f" "$target"; done
+      - name: Build 26.2
+        run: |
+          rm -rf build
+          gradle clean build --no-daemon --max-workers=1
+      - name: Commit migrated port
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
-          git commit -m "[26.2-port] Update to Minecraft 26.2" || exit 0
+          git commit -m "[26.2-port] Migrate source to Minecraft 26.2" || exit 0
           git push
-# retrigger
