@@ -65,7 +65,7 @@ public final class WindowsRobotCaptureBackend implements ScreenCaptureBackend {
         if (!client.getWindow().isFullscreen() || !client.isSameThread()) return false;
 
         try {
-            Screenshot.takeScreenshot(client.gameRenderer.mainRenderTarget(), FULLSCREEN_DOWNSCALE, image -> {
+            Screenshot.takeScreenshot(client.getMainRenderTarget(), FULLSCREEN_DOWNSCALE, image -> {
                 try {
                     consumer.accept(toBufferedImage(image));
                 } finally {
