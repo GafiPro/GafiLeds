@@ -17,6 +17,7 @@ jobs:
           mkdir -p /tmp/target
           cp gradle.properties /tmp/target/gradle.properties
           cp build.gradle /tmp/target/build.gradle
+          cp settings.gradle /tmp/target/settings.gradle
           find src -name fabric.mod.json -print0 | while IFS= read -r -d '' f; do mkdir -p "/tmp/target/$(dirname "$f")"; cp "$f" "/tmp/target/$f"; done
       - name: Prepare temporary 1.21.11 Yarn build
         shell: python
@@ -46,6 +47,10 @@ jobs:
           s = s.replace('options.release = 25', 'options.release = 21')
           s = s.replace('JavaVersion.VERSION_25', 'JavaVersion.VERSION_21')
           p.write_text(s)
+          p = Path('settings.gradle')
+          s = p.read_text()
+          s = re.sub(r'(net\\.fabricmc\\.fabric-loom(?:-remap)?[\"\\']\\s+version\\s+[\"\\'])[^\"\\']+([\"\\'])', r'\\g<1>1.17.13\\g<2>', s)
+          p.write_text(s)
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -59,6 +64,7 @@ jobs:
         run: |
           cp /tmp/target/gradle.properties gradle.properties
           cp /tmp/target/build.gradle build.gradle
+          cp /tmp/target/settings.gradle settings.gradle
           find /tmp/target/src -name fabric.mod.json -print0 | while IFS= read -r -d '' f; do target="${f#/tmp/target/}"; cp "$f" "$target"; done
       - uses: actions/setup-java@v4
         with:
