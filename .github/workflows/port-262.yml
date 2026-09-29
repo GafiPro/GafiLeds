@@ -20,7 +20,7 @@ jobs:
           find src -name fabric.mod.json -print0 | while IFS= read -r -d '' f; do mkdir -p "/tmp/target/$(dirname "$f")"; git show "HEAD:$f" > "/tmp/target/$f"; done
       - name: Prepare old Yarn build
         run: |
-          git checkout HEAD~3 -- gradle.properties build.gradle
+          git checkout HEAD~5 -- gradle.properties build.gradle
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
