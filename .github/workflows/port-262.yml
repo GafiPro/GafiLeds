@@ -105,6 +105,7 @@ jobs:
               s = s.replace("client.screen", "client.gui.screen()")
               s = s.replace("client.setScreen(", "client.gui.setScreen(")
               s = s.replace("client.isWindowFocused()", "client.isWindowActive()")
+              s = s.replace("client.getMainRenderTarget()", "client.gameRenderer.mainRenderTarget()")
 
               
 
