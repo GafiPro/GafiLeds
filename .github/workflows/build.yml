@@ -25,6 +25,7 @@ jobs:
       - name: Build
         run: gradle clean build --no-daemon --max-workers=2
       - name: Upload JARs
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: GafiLeds-jars
