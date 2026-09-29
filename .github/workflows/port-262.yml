@@ -59,20 +59,23 @@ jobs:
         with:
           gradle-version: '9.5.1'
       - name: Migrate Yarn to Mojang mappings
-        run: gradle migrateMappings --mappings "net.minecraft:mappings:1.21.11" --no-daemon
-      - name: Restore 26.2 build files
+        run: gradle migrateMappings --mappings "net.minecraft:mappings:1.21.11" --no-daemon && test -d remappedSrc
+      - name: Restore 26.2 build files and migrated source
+        shell: bash
         run: |
           cp /tmp/target/gradle.properties gradle.properties
           cp /tmp/target/build.gradle build.gradle
           cp /tmp/target/settings.gradle settings.gradle
           find /tmp/target/src -name fabric.mod.json -print0 | while IFS= read -r -d '' f; do target="${f#/tmp/target/}"; cp "$f" "$target"; done
+          rm -rf src/main/java
+          cp -R remappedSrc/main/java src/main/java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.7.0'
+          gradle-version: '9.5.1'
       - name: Build 26.2
         run: |
           rm -rf build
