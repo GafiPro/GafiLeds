@@ -49,7 +49,7 @@ jobs:
           p.write_text(s)
           p = Path('settings.gradle')
           s = p.read_text()
-          s = re.sub(r'(net\\.fabricmc\\.fabric-loom(?:-remap)?[\"\\']\\s+version\\s+[\"\\'])[^\"\\']+([\"\\'])', r'\\g<1>1.17.13\\g<2>', s)
+          s = s.replace('version \"1.17.21\"', 'version \"1.17.13\"')
           p.write_text(s)
       - uses: actions/setup-java@v4
         with:
